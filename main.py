@@ -1,4 +1,6 @@
+import matplotlib.pyplot as plt
 from rocket import *
+import random
 
 # first stage, dry and propellant mass right
 rho_prop = 700
@@ -9,13 +11,17 @@ rocket = Rocket(rho_prop, l_r, r)
 # print(rocket.x_prop)
 # print(rocket.mass)
 
-for _ in range(5000):
-    rocket.update(0, 1)
+height = []
+mass = []
+
+for _ in range(1):
+    rocket.update(0, 0)
     print(rocket.position[-1])
-    print(rocket.mass)
-# print('Höhe', rocket.x_prop)
-#
-# print(rocket.mass * 9.81)
-# print(rocket.thruster)
+    height.append(rocket.position[-1][1])
+    mass.append(rocket.mass)
+
+plt.figure()
+plt.plot(height)
+plt.show()
 
 

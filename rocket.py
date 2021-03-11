@@ -24,13 +24,15 @@ class Rocket:
         # position and thruster
         self.f_0 = 9 * 51e3  # maximal Thrust in Newton, 9 Merlin C1
         self.prop_consumption = 1e-6  # m^3/N, 170s burntime
-        self.position = [np.array([0, 5000, 0])]  # [np.zeros(3)]  # coordinates + rotation (x, y, R)
+        self.position = [np.array([0, 200, 0])]  # [np.zeros(3)]  # coordinates + rotation (x, y, R)
         self.thruster = np.zeros(2)  # angle + force (phi, f) (local coordinates)
 
         self.t_step = 0.1
         self.omega = np.array([0])
         self.v = np.array([[random.randint(-10, 10)],
                            [random.randint(-60, -40)]])
+        self.deq = None
+        self.symbolic()  # define differential equation self.deq for movement
 
     def update(self, angle, power):
         # upadte thruster
@@ -48,7 +50,9 @@ class Rocket:
         self.movement()
 
     def movement(self):
-        v_x_new, v_y_new, w_new = self.symbolic()
+        v_x_new, v_y_new, w_new = self.deq(self.center, self.moment_inertia, self.omega.item(), self.v[0].item(),
+                                           self.v[1].item(), self.t_step, self.thruster[0], self.thruster[1],
+                                           self.mass, self.position[-1][2])
         self.omega = np.array([w_new])
         self.v = np.array([[v_x_new],
                            [v_y_new]])
@@ -111,9 +115,6 @@ class Rocket:
 
         # solution with variables
         sol, = sp.linsolve((eq1, eq2, eq3), (v_x, v_y, w))
+        self.deq = sp.lambdify([x_c, j_m, w_l, v_x_l, v_y_l, t, phi, p, m, r], sol)
 
-        substitutions = [(x_c, self.center), (j_m, self.moment_inertia), (w_l, self.omega.item()),
-                         (v_x_l, self.v[0].item()), (v_y_l, self.v[1].item()), (t, self.t_step),
-                         (phi, self.thruster[0]), (p, self.thruster[1]), (m, self.mass), (r, self.position[-1][2])]
-        val = sol.subs(substitutions)
-        return val  # v_x_new, v_y_new, w_new
+        print(sol)
