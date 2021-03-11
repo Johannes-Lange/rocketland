@@ -14,7 +14,7 @@ rocket = Rocket(rho_prop, l_r, r)
 height = []
 mass = []
 
-for _ in range(1):
+for _ in range(300):
     rocket.update(0, 0)
     print(rocket.position[-1])
     height.append(rocket.position[-1][1])

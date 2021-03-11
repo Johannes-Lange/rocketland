@@ -116,5 +116,3 @@ class Rocket:
         # solution with variables
         sol, = sp.linsolve((eq1, eq2, eq3), (v_x, v_y, w))
         self.deq = sp.lambdify([x_c, j_m, w_l, v_x_l, v_y_l, t, phi, p, m, r], sol)
-
-        print(sol)
