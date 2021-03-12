@@ -27,7 +27,7 @@ class Visualization:
         self.label.setFace('times roman')
         self.label.draw(self.window)
 
-    def frame(self, rocket, realtime=True):
+    def frame(self, rocket, score, realtime=True):
         if self.rocket_len is None:
             self.rocket_len = rocket.length
             self.rocket_r = rocket.radius
@@ -85,7 +85,8 @@ class Visualization:
               'altitude: {:.1f} m\n' \
               'propellant: {:.1f}%\n' \
               'thrust: {:.1f}%\n' \
-              'angle: {:.1f}°'.format(rocket.v[1].item(), y, x_p/self.rocket_len*100, thrust*100, np.rad2deg(phi))
+              'angle: {:.1f}°\n' \
+              'reward: {}'.format(rocket.v[1].item(), y, x_p/self.rocket_len*100, thrust*100, np.rad2deg(phi), score)
         self.label.setText(log)
 
         # update frame for real-time visualization
