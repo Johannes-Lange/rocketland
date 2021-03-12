@@ -1,4 +1,7 @@
 import numpy as np
 import sympy as sp
 
-print(np.array([0, 0, 0]))
+
+
+a = Visualization(500, 500)
+a.frame(np.array([100, 100, 0.2]), 35)

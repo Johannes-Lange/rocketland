@@ -4,35 +4,37 @@ import random
 
 
 class Rocket:
-    def __init__(self, rho, l_r, r):
+    def __init__(self, prop=1):
+        # Timestep
+        self.t_step = 0.01
+
         # geometry
-        self.length = l_r
-        self.radius = r
+        self.length = 41
+        self.radius = 1.83
         self.cross_sec = np.pi * self.radius ** 2
 
         # densitys
         rho_al = 2700  # density aluminum
         self.rho_body = (2 * np.pi * self.radius) * 0.03 * rho_al / self.cross_sec  # 3cm wall thicknes
-        self.rho_prop = rho
+        self.rho_prop = 700
 
         # mass, complete rocket is tank
-        self.x_prop = self.length  # height of propellant
-        self.mass = self.length * self.cross_sec * (self.rho_prop + self.rho_body)
-        self.center = self.length/2
-        self.moment_inertia = 1/3 * self.mass * self.length**2
+        self.center, self.moment_inertia = None, None
+        self.x_prop = prop*self.length  # height of propellant
+        self.mass = self.cross_sec * (self.rho_body * self.length + self.rho_prop * self.x_prop)
+        self.center_gravity()
+        self.moment_of_inertia()
 
         # position and thruster
-        self.f_0 = 9 * 51e3  # maximal Thrust in Newton, 9 Merlin C1
-        self.prop_consumption = 1e-6  # m^3/N, 170s burntime
+        self.f_0 = 9 * 420e3  # maximal Thrust in Newton, 9 Merlin C1
+        self.prop_consumption = (self.length*self.cross_sec)/(self.f_0*170/self.t_step)  # m^3/N, 170s burntime
         self.position = [np.array([0, 200, 0])]  # [np.zeros(3)]  # coordinates + rotation (x, y, R)
         self.thruster = np.zeros(2)  # angle + force (phi, f) (local coordinates)
 
-        self.t_step = 0.1
         self.omega = np.array([0])
         self.v = np.array([[random.randint(-10, 10)],
                            [random.randint(-60, -40)]])
-        self.deq = None
-        self.symbolic()  # define differential equation self.deq for movement
+        self.deq = symbolic_equation()  # define differential equation self.deq for movement
 
     def update(self, angle, power):
         # upadte thruster
@@ -59,9 +61,6 @@ class Rocket:
         last_position = self.position[-1]
         self.position.append(last_position + np.array([v_x_new, v_y_new, w_new])*self.t_step)
 
-    def get_state(self):
-        return self.position[-1], self.thruster
-
     def update_thrust(self, angle, p):
         # throttle down to 20% possible --> p between 0.2 and 1
         # F = mass_flow * velocity (+ (p_exit - p_0) * A_exit)
@@ -70,6 +69,8 @@ class Rocket:
         self.thruster[0] = angle
         if self.x_prop > 0:
             self.thruster[1] = f
+        else:
+            self.thruster[1] = 0
 
     def center_gravity(self):
         m_body = self.rho_body * self.cross_sec * self.length
@@ -81,38 +82,52 @@ class Rocket:
                                                   self.rho_prop*((self.x_prop-self.center)**3-(-self.center)**3))
 
     def rotation_matrix(self):
-        return np.array([[np.cos(self.position[-1][3]), -np.sin(self.position[-1][3])],
-                         [np.sin(self.position[-1][3]), np.cos(self.position[-1][3])]])
+        return np.array([[np.cos(self.position[-1][2]), np.sin(self.position[-1][2])],
+                         [-np.sin(self.position[-1][2]), np.cos(self.position[-1][2])]])
 
-    def symbolic(self):
-        r, v_x, v_x_l, v_y, v_y_l, t, phi, p, m, j_m, w, w_l, x_c = sp.symbols('r v_x v_x_l v_y v_y_l t \
-                                                                               phi p m j_m w w_l x_c')
-        # rotation matrix
-        rot = sp.Matrix([[sp.cos(r), -sp.sin(r)],
-                         [sp.sin(r), sp.cos(r)]])
-        # gravity
-        f_g = rot * sp.Matrix([[0],
-                               [-9.81 * m]])
-        # thrust
-        f_t = sp.Matrix([[-p * sp.sin(phi)],
-                         [p * sp.cos(phi)]])
-        # inertia force
-        f_in = m * rot * sp.Matrix([[(v_x - v_x_l) / t],
-                                    [(v_y - v_y_l) / t]])
-        # inertia moment
-        m_in = j_m * (w - w_l) / t
-        # moment from thrust
-        m_t = f_t[0] * x_c
+    def terminated(self):
+        return self.position[-1][1] < 0
 
-        # Equations to solve
-        force_u = f_g[0] + f_in[0] + f_t[0]
-        force_v = f_g[1] + f_in[1] + f_t[1]
-        moment = m_in + m_t
+    def get_state(self):
+        return self.position[-1], self.thruster, self.v, self.omega
 
-        eq1 = sp.Eq(force_u, 0)
-        eq2 = sp.Eq(force_v, 0)
-        eq3 = sp.Eq(moment, 0)
+    def set_state(self, x, y, r, v_x, v_y, w):
+        self.position.append(np.array([x, y, r]))
+        self.v = np.array([[v_x],
+                           [v_y]])
+        self.omega = np.array([w])
 
-        # solution with variables
-        sol, = sp.linsolve((eq1, eq2, eq3), (v_x, v_y, w))
-        self.deq = sp.lambdify([x_c, j_m, w_l, v_x_l, v_y_l, t, phi, p, m, r], sol)
+
+def symbolic_equation():
+    r, v_x, v_x_l, v_y, v_y_l, t, phi, f, m, j_m, w, w_l, x_c = sp.symbols('r v_x v_x_l v_y v_y_l t \
+                                                                           phi f m j_m w w_l x_c')
+    # rotation matrix
+    rot = sp.Matrix([[sp.cos(r), sp.sin(r)],
+                     [-sp.sin(r), sp.cos(r)]])
+    # gravity
+    f_g = -rot * sp.Matrix([[0],
+                           [-9.81 * m]])
+    # thrust
+    f_t = sp.Matrix([[f * sp.sin(phi)],
+                     [-f * sp.cos(phi)]])
+    # inertia force
+    f_in = m * rot * sp.Matrix([[(v_x - v_x_l) / t],
+                                [(v_y - v_y_l) / t]])
+    # inertia moment
+    m_in = j_m * (w - w_l) / t
+    # moment from thrust
+    m_t = f_t[0] * x_c
+
+    # Equations to solve
+    force_u = f_g[0] + f_in[0] + f_t[0]
+    force_v = f_g[1] + f_in[1] + f_t[1]
+    moment = m_in + m_t
+
+    eq1 = sp.Eq(force_u, 0)
+    eq2 = sp.Eq(force_v, 0)
+    eq3 = sp.Eq(moment, 0)
+
+    # solution with variables
+    sol, = sp.linsolve((eq1, eq2, eq3), (v_x, v_y, w))
+    eq = sp.lambdify([x_c, j_m, w_l, v_x_l, v_y_l, t, phi, f, m, r], sol)
+    return eq

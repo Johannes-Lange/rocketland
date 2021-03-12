@@ -1,27 +1,16 @@
-import matplotlib.pyplot as plt
+from render import Visualization
 from rocket import *
-import random
 
-# first stage, dry and propellant mass right
-rho_prop = 700
-l_r = 41
-r = 1.83
+rocket = Rocket(prop=0.5)
+# rocket.set_state(0, 700, 0, 0, -100, 0)
+rocket.set_state(0, 0, 0, 0, 0, 0)
 
-rocket = Rocket(rho_prop, l_r, r)
-# print(rocket.x_prop)
-# print(rocket.mass)
+render = Visualization(600, 760)
+for i in range(5000):
+    rocket.update(0., 1)
+    render.frame(rocket)
+    if rocket.terminated():
+        break
 
-height = []
-mass = []
-
-for _ in range(300):
-    rocket.update(0, 0)
-    print(rocket.position[-1])
-    height.append(rocket.position[-1][1])
-    mass.append(rocket.mass)
-
-plt.figure()
-plt.plot(height)
-plt.show()
 
 
