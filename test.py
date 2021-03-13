@@ -1,7 +1,5 @@
-import numpy as np
-import sympy as sp
+from dql import DQL
 
-
-
-a = Visualization(500, 500)
-a.frame(np.array([100, 100, 0.2]), 35)
+al = DQL()
+al.model.load_state()
+al.iteration(5000)

@@ -1,17 +1,21 @@
 from numpy.linalg import norm
+from math import fmod
 import numpy as np
 import sympy as sp
 import random
 
 
 class Rocket:
-    def __init__(self, prop=1):
+    def __init__(self, w, h, prop=1):
+        # area
+        self.w, self.h = w, h
+
         # Timestep
         self.t_step = 0.01
-
-        # score
-        self.score = 0
-        self.bins = np.array([0, 5, 15, 30, 80, 150, 300, 1000])
+        self. lifespan = 0
+        self.score = []
+        self.dead = False
+        self.success = False
 
         # geometry
         self.length = 41
@@ -24,6 +28,7 @@ class Rocket:
         self.rho_prop = 700
 
         # mass, complete rocket is tank
+        self.prop = prop
         self.mass, self.center, self.moment_inertia, self.y_low = None, None, None, None
         self.x_prop = prop*self.length  # height of propellant
         self.center_gravity()
@@ -31,7 +36,7 @@ class Rocket:
 
         # position and thruster
         self.f_0 = 9 * 420e3  # maximal Thrust in Newton, 9 Merlin C1
-        self.prop_consumption = (self.length*self.cross_sec)/(self.f_0*170/self.t_step)  # m^3/N, 170s burntime
+        self.prop_consumption = (self.length*self.cross_sec)/(self.f_0*170/self.t_step) * 10 # m^3/N, 170s burntime
         self.position = [np.array([0, 200, 0])]  # [np.zeros(3)]  # coordinates + rotation (x, y, R)
         self.thruster = np.zeros(2)  # angle + force (phi, f) (local coordinates)
 
@@ -43,6 +48,7 @@ class Rocket:
     def update(self, angle, power):
         # get state
         state_0 = self.get_state()
+        self.lifespan += 1
 
         # upadte thruster
         self.update_thrust(angle, power)
@@ -59,25 +65,27 @@ class Rocket:
 
         # lowest point (check if termination)
         self.lowest_point()
-        self.update_score()
+        succ = self.terminated()
+
+        self.score.append(self.update_score(state_0))
 
         # state_0, action, reward, state_1, terminal
         state_1 = self.get_state()
-        return state_0, angle, power, self.update_score(), state_1, self.terminated()
+        return state_0, (angle, power), self.score[-1], state_1, self.dead
 
     def movement(self):
         v_x_new, v_y_new, w_new = self.deq(self.center, self.moment_inertia, self.omega.item(), self.v[0].item(),
                                            self.v[1].item(), self.t_step, self.thruster[0], self.thruster[1],
                                            self.mass, self.position[-1][2])
+        # save solution for velocity
         self.omega = np.array([w_new])
         self.v = np.array([[v_x_new],
                            [v_y_new]])
+        # update position
         last_position = self.position[-1]
         self.position.append(last_position + np.array([v_x_new, v_y_new, w_new])*self.t_step)
 
     def update_thrust(self, angle, p):
-        # throttle down to 20% possible --> p between 0.2 and 1
-        # F = mass_flow * velocity (+ (p_exit - p_0) * A_exit)
         f = p*self.f_0
 
         self.thruster[0] = angle
@@ -100,26 +108,20 @@ class Rocket:
         return np.array([[np.cos(self.position[-1][2]), np.sin(self.position[-1][2])],
                          [-np.sin(self.position[-1][2]), np.cos(self.position[-1][2])]])
 
-    def update_score(self):
+    def update_score(self, last_state):
         # depends on velocity, rotation, distance to 0, leverage of velocity increases with lower distance
         vx, vy, w = self.v[0], self.v[1], self.omega
         x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
+        xl, yl, rl = last_state[0], last_state[1], last_state[2]
+        vxl, vyl, wl = last_state[3], last_state[4], last_state[5]
+        r = fmod(r, (2*np.pi))
+        rl = fmod(rl, (2*np.pi))
 
-        sc = 0
-        if -100 < vy < 0:
-            sc += 1
-        if np.abs(vx) < 5:
-            sc += 1
-        if r < 0.2:
-            idx = np.digitize(y, self.bins).item()
-            sc += {0: 10, 1: 9, 2: 8, 3: 7, 4: 5, 5: 2, 6: 1, 7: 0}[idx]
-            if sc > 8:
-                if -40 < vy < 0:
-                    sc += (5 - int(np.abs(vy)/10))
-        if vy > 1:
-            sc = -1
-        print(sc)
-        return sc
+        sc = -100*(norm([x, y]) - norm([xl, yl])) - 100*(norm([vx, vy]) - norm([vxl, vyl])) \
+             - 100*(w - wl) - 100*(r - rl)
+        if self.success:
+            sc += 500
+        return sc.item()
 
     def lowest_point(self):
         x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
@@ -128,16 +130,71 @@ class Rocket:
         self.y_low = min(y_b, y_t)
 
     def terminated(self):
-        return self.y_low < 0
+        epsilon = np.arcsin(self.radius / self.center)
+        x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
+        out_area = False
+        ground = False
+        success = False
+
+        # boarders
+        if np.abs(x) > self.w/2 + 10 or np.abs(y) > self.h + 10:
+            out_area = True
+
+        # ground
+        if self.y_low < 0:
+            ground = True
+            if r % (2*np.pi) < epsilon and norm(self.v < 5):
+                # landing successfull if no tip over and slow enough
+                success = True
+
+        self.dead = out_area or ground
+        self.success = success
 
     def get_state(self):
         return np.concatenate([self.position[-1].ravel(), self.v.ravel(), self.omega.ravel()], axis=0)
 
     def set_state(self, x, y, r, v_x, v_y, w):
         self.position.append(np.array([x, y, r]))
+        self.x_prop = self.prop * self.length
+        self.center_gravity()
+        self.moment_of_inertia()
         self.v = np.array([[v_x],
                            [v_y]])
         self.omega = np.array([w])
+        self.lifespan = 0
+        self.score = []
+        self.dead = False
+
+    def update_score_old(self):
+        # depends on velocity, rotation, distance to 0, leverage of velocity increases with lower distance
+        vx, vy, w = self.v[0], self.v[1], self.omega
+        x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
+        r = fmod(r, (2 * np.pi))
+
+        if self.dead and not self.success:
+            return -1
+
+        sc = 0
+        if np.abs(r) < 0.2:
+            sc += 0.1
+        if y < 100 and -20 < vy < 0:
+            sc += 0.1
+        if y < 50 and -10 < vy < 0 and np.abs(vx) < 1 and r < 0.02:
+            sc += 1
+        if -70 < vy < 0:
+            sc += 0.1
+        if vy > 0:
+            sc -= 0.1
+        if (w > 0 and r > 0) or (w < 0 and r < 0):
+            sc -= 0.2
+        if np.abs(vx) < 10:
+            sc += 0.1
+        if self.success:
+            sc += 10
+        sc += 3 * np.exp(- np.linalg.norm(np.array([x, y])) / 200)
+        sc *= 1.5 * np.exp(- np.abs(r) * 5)
+
+        return sc
 
 
 def symbolic_equation():
@@ -152,6 +209,7 @@ def symbolic_equation():
     # thrust
     f_t = sp.Matrix([[f * sp.sin(phi)],
                      [-f * sp.cos(phi)]])
+
     # inertia force
     f_in = m * rot * sp.Matrix([[(v_x - v_x_l) / t],
                                 [(v_y - v_y_l) / t]])

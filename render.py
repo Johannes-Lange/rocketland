@@ -86,7 +86,8 @@ class Visualization:
               'propellant: {:.1f}%\n' \
               'thrust: {:.1f}%\n' \
               'angle: {:.1f}°\n' \
-              'reward: {}'.format(rocket.v[1].item(), y, x_p/self.rocket_len*100, thrust*100, np.rad2deg(phi), score)
+              'reward: {:.2f}'.format(rocket.v[1].item(), y, x_p/self.rocket_len*100,
+                                      thrust*100, np.rad2deg(phi), score)
         self.label.setText(log)
 
         # update frame for real-time visualization
@@ -99,7 +100,9 @@ class Visualization:
         else:
             update(300)
 
-    def clear(self):
+    def clear(self, ep=None):
         for item in self.to_draw:
             item.undraw()
+        if ep:
+            self.label.setText('Iteration: ' + str(ep))
         self.window.update()
