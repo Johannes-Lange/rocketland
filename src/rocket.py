@@ -1,3 +1,4 @@
+from src.tools import normalize_state
 from numpy.linalg import norm
 from math import fmod
 import numpy as np
@@ -14,6 +15,7 @@ class Rocket:
         self.t_step = 0.01
         self. lifespan = 0
         self.score = []
+        self.previous_shaping = None
         self.dead = False
         self.success = False
 
@@ -67,30 +69,40 @@ class Rocket:
         self.lowest_point()
         self.terminated()
 
-        self.score.append(self.update_score(state_0))
+        self.score.append(self.update_score())
 
         # state_0, action, reward, state_1, terminal
         state_1 = self.get_state()
         return state_0, (angle, power), self.score[-1], state_1, self.dead
 
-    def update_score(self, last_state):
-        # depends on velocity, rotation, distance to 0, leverage of velocity increases with lower distance
-        vx, vy, w = self.v[0], self.v[1], self.omega
-        x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
-        xl, yl, rl = last_state[0], last_state[1], last_state[2]
-        vxl, vyl, wl = last_state[3], last_state[4], last_state[5]
-        rm = fmod(r, (2*np.pi))
-        rlm = fmod(rl, (2*np.pi))
+    def update_score(self):
+        # depends on velocity, rotation, distance to 0
+        state = normalize_state(self.get_state())
+        reward = 0
 
-        sc = -100*(norm([x, y]) - norm([xl, yl])) - 100*(norm([vx, vy]) - norm([vxl, vyl])) \
-             - 100*(w - wl) - 100*(rm - rlm) - 100*abs(r)
+        # -100 * distance to landing pad, -100 * velocity, -100 * angle
+        shaping = - 100 * norm(state[0:1]) \
+                  - 100 * norm(state[3:4]) \
+                  - 100 * abs(state[2])
+
+        # shaping = -10 * norm(self.position[-1][0:1]) \
+        #           - 100 * norm(self.v)\
+        #           - 100 * abs(self.position[-1][2])
+
+        if self.previous_shaping is not None:
+            reward = shaping - self.previous_shaping
+        self.previous_shaping = shaping
+
+        """
+        sc = -10*(norm([x, y]) - norm([xl, yl])) - 100*(norm([vx, vy]) - norm([vxl, vyl])) \
+             - 100*(w - wl) - 10*abs(r)
 
         sc *= 0.8 + (1.5 - 0.8) * np.exp(- abs(r) * 5)
-
+        """
         if self.success:
-            sc += 100
+            reward += 100
 
-        return sc.item()
+        return reward
 
     def terminated(self):
         epsilon = np.arcsin(self.radius / self.center)
@@ -173,7 +185,7 @@ class Rocket:
         self.score = []
         self.dead = False
 
-    def update_score_old(self, *args):
+    def update_score_old(self):
         # depends on velocity, rotation, distance to 0, leverage of velocity increases with lower distance
         vx, vy, w = self.v[0], self.v[1], self.omega
         x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
