@@ -1,4 +1,3 @@
-from src.tools import normalize_state
 from numpy.linalg import norm
 from math import fmod
 import numpy as np
@@ -37,10 +36,11 @@ class Rocket:
         self.moment_of_inertia()
 
         # position and thruster
-        self.f_0 = 9 * 420e3  # maximal Thrust in Newton, 9 Merlin C1
+        self.f_0 = 9 * 540e3  # maximal Thrust in Newton, 9 Merlin C1 (before: 9*420e3)
         self.prop_consumption = (self.length*self.cross_sec)/(self.f_0*170/self.t_step) * 10  # m^3/N, 170s burntime
         self.position = [np.array([0, 200, 0])]  # [np.zeros(3)]  # coordinates + rotation (x, y, R)
         self.thruster = np.zeros(2)  # angle + force (phi, f) (local coordinates)
+        self.thruster_level = 0
 
         self.omega = np.array([0])
         self.v = np.array([[random.randint(-10, 10)],
@@ -53,6 +53,7 @@ class Rocket:
         self.lifespan += 1
 
         # upadte thruster
+        self.thruster_level = power
         self.update_thrust(angle, power)
 
         # update propellant and mass
@@ -77,30 +78,22 @@ class Rocket:
 
     def update_score(self):
         # depends on velocity, rotation, distance to 0
-        state = normalize_state(self.get_state())
-        reward = 0
-
-        # -100 * distance to landing pad, -100 * velocity, -100 * angle
-        shaping = - 100 * norm(state[0:1]) \
-                  - 100 * norm(state[3:4]) \
-                  - 100 * abs(state[2])
-
-        # shaping = -10 * norm(self.position[-1][0:1]) \
-        #           - 100 * norm(self.v)\
-        #           - 100 * abs(self.position[-1][2])
+        state = self.get_state()
+        reward = np.array([0])
+        # -100 * distance to landing pad, -100 * velocity, -100 * angle, -100 * omega
+        shaping = np.array([- 100 * norm(state[0:2]),  # distance
+                            - 200 * norm(state[3:5]),
+                            - 100 * norm(state[2])])  # velocity
 
         if self.previous_shaping is not None:
             reward = shaping - self.previous_shaping
         self.previous_shaping = shaping
+        reward = reward.sum()
+        reward -= 0.1 * abs(state[2])
 
-        """
-        sc = -10*(norm([x, y]) - norm([xl, yl])) - 100*(norm([vx, vy]) - norm([vxl, vyl])) \
-             - 100*(w - wl) - 10*abs(r)
-
-        sc *= 0.8 + (1.5 - 0.8) * np.exp(- abs(r) * 5)
-        """
+        # reward -= (0.1 + (1 - 0.1) * np.exp(- norm(state[0:1])/.5)) * norm(state[3:4])
         if self.success:
-            reward += 100
+            reward += 200
 
         return reward
 
@@ -170,8 +163,15 @@ class Rocket:
 
     """ *********** Get / Set *********** """
     def get_state(self):
-        return np.concatenate([self.position[-1].ravel(), self.v.ravel(), self.omega.ravel(),
-                               np.array([self.x_prop])], axis=0)
+        state = np.concatenate([self.position[-1][0].ravel()/(self.w/2),  # x
+                                self.position[-1][1].ravel()/self.h,  # y
+                                self.position[-1][2].ravel(),  # r
+                                self.v[0].ravel()/(self.w/2)*self.t_step * 100,  # vx
+                                self.v[1].ravel()/self.h*self.t_step * 100,  # vy
+                                self.omega.ravel()/self.t_step*20,  # omega
+                                np.array([self.x_prop]).ravel()/40])  # c_prop
+
+        return state  # normalize_state(state)
 
     def set_state(self, x, y, r, v_x, v_y, w):
         self.position.append(np.array([x, y, r]))
