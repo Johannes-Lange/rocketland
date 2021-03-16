@@ -1,5 +1,7 @@
 ## rocketland
-# Dependencies
+**Dependencies**
   * numpy
   * sympy
   * graphics.py
+  * torch
+----
