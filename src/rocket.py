@@ -60,11 +60,11 @@ class Rocket:
         self.x_prop -= self.prop_consumption * self.thruster[1] / self.cross_sec
 
         # update center + moment inertia
-        self.center_gravity()  # updates mass and center of gravity
+        self.center_gravity()
         self.moment_of_inertia()
 
         # update position
-        self.movement()
+        self.update_position()
 
         # lowest point (check if termination)
         self.lowest_point()
@@ -80,10 +80,10 @@ class Rocket:
         # depends on velocity, rotation, distance to 0
         state = self.get_state()
         reward = np.array([0])
-        # -100 * distance to landing pad, -100 * velocity, -100 * angle, -100 * omega
+
         shaping = np.array([- 100 * norm(state[0:2]),  # distance
-                            - 200 * norm(state[3:5]),
-                            - 100 * norm(state[2])])  # velocity
+                            - 100 * norm(state[3:5]),  # velocity (200, maybe lower scaling)
+                            - 100 * norm(state[2])])  # rotation
 
         if self.previous_shaping is not None:
             reward = shaping - self.previous_shaping
@@ -91,7 +91,6 @@ class Rocket:
         reward = reward.sum()
         reward -= 0.1 * abs(state[2])
 
-        # reward -= (0.1 + (1 - 0.1) * np.exp(- norm(state[0:1])/.5)) * norm(state[3:4])
         if self.success:
             reward += 200
 
@@ -138,7 +137,7 @@ class Rocket:
         self.moment_inertia = 1/3*self.cross_sec*(self.rho_body*((self.length-self.center)**3-(-self.center)**3) +
                                                   self.rho_prop*((self.x_prop-self.center)**3-(-self.center)**3))
 
-    def movement(self):
+    def update_position(self):
         v_x_new, v_y_new, w_new = self.deq(self.center, self.moment_inertia, self.omega.item(), self.v[0].item(),
                                            self.v[1].item(), self.t_step, self.thruster[0], self.thruster[1],
                                            self.mass, self.position[-1][2])
@@ -171,7 +170,7 @@ class Rocket:
                                 self.omega.ravel()/self.t_step*20,  # omega
                                 np.array([self.x_prop]).ravel()/40])  # c_prop
 
-        return state  # normalize_state(state)
+        return state
 
     def set_state(self, x, y, r, v_x, v_y, w):
         self.position.append(np.array([x, y, r]))
@@ -184,37 +183,6 @@ class Rocket:
         self.lifespan = 0
         self.score = []
         self.dead = False
-
-    def update_score_old(self):
-        # depends on velocity, rotation, distance to 0, leverage of velocity increases with lower distance
-        vx, vy, w = self.v[0], self.v[1], self.omega
-        x, y, r = self.position[-1][0], self.position[-1][1], self.position[-1][2]
-        r = fmod(r, (2 * np.pi))
-
-        if self.dead and not self.success:
-            return -1
-
-        sc = 0
-        if np.abs(r) < 0.2:
-            sc += 0.1
-        if y < 100 and -20 < vy < 0:
-            sc += 0.1
-        if y < 50 and -10 < vy < 0 and np.abs(vx) < 1 and abs(r) < 0.02:
-            sc += 1
-        if -70 < vy < 0:
-            sc += 0.1
-        if vy > 0:
-            sc -= 0.1
-        if (w > 0 and r > 0) or (w < 0 and r < 0):
-            sc -= 0.2
-        if np.abs(vx) < 10:
-            sc += 0.1
-        if self.success:
-            sc += 10
-        sc += 3 * np.exp(- np.linalg.norm(np.array([x, y])) / 200)
-        sc *= 1.5 * np.exp(- np.abs(r) * 5)
-
-        return sc
 
 
 def symbolic_equation():

@@ -1,6 +1,7 @@
 from src.render import Visualization
 from src.rocket import Rocket
 from random import uniform as uf
+from datetime import datetime
 from copy import deepcopy
 import torch.nn as nn
 import torch
@@ -12,6 +13,7 @@ from config import *
 
 class DQL:
     def __init__(self, vis=True):
+        self.date = datetime.now().strftime('%Y%m%d%H%M')
         self.w, self.h = W, H
         self.vis = vis
 
@@ -29,8 +31,8 @@ class DQL:
         self.rocket = Rocket(self.w, self.h, prop=0.5)
 
         # optimizer and loss criterion
-        self.policy_net = DQLModel()
-        self.target_net = DQLModel()
+        self.policy_net = DQLModel(self.date)
+        self.target_net = DQLModel(self.date)
         self.target_net.eval()
         if self.cuda:
             self.policy_net.layers = self.policy_net.layers.to(self.device)
@@ -55,7 +57,7 @@ class DQL:
             game_duration = 0
             score = 0
             loss = 0
-            self.rocket.set_state(uf(-100, 100), uf(650, 750), uf(-0.2, 0.2), uf(-20, 20), uf(-120, -80), uf(-0.2, 0.2))
+            self.rocket.set_state(uf(-100, 100), uf(650, 750), uf(-2.5, 2.5), uf(-20, 20), uf(-120, -80), uf(-0.6, 0.6))
             state_0 = torch.tensor(self.rocket.get_state(), device=self.device).float()
             while not self.rocket.dead:
                 game_duration += 1
@@ -97,9 +99,9 @@ class DQL:
             if (game+1) % 100 == 0:
                 dump = {'scores': scores, 'losses': losses}
                 self.policy_net.save_state()
-                pickle.dump(dump, open('runs/stats.pkl', 'wb'))
+                # pickle.dump(dump, open('runs/' + self.date + '_stats.pkl', 'wb'))
             if game % TARGET_UPDATE == 0:
-                self.target_net.layers.load_state_dict(deepcopy(self.policy_net.get_state()))
+                self.target_net.load_state(deepcopy(self.policy_net.get_state()))
 
     def train(self):
         # get batch of transitions
@@ -122,9 +124,10 @@ class DQL:
 
     def test(self, state_dict=None):
         if state_dict is not None:
-            self.policy_net.layers.load_state_dict(state_dict)
-        for _ in range(10):
-            self.rocket.set_state(uf(-100, 100), uf(650, 750), uf(-0.2, 0.2), uf(-20, 20), uf(-120, -80), uf(-0.2, 0.2))
+            print('load')
+            self.policy_net.load_state(state_dict)
+        for _ in range(50):
+            self.rocket.set_state(uf(-100, 100), uf(650, 750), uf(-2.5, 2.5), uf(-20, 20), uf(-120, -80), uf(-0.6, 0.6))
             while not self.rocket.dead:
                 state_0 = torch.tensor(self.rocket.get_state(), device=self.device).float()
                 # select next action
@@ -139,8 +142,10 @@ class DQL:
 
 
 class DQLModel(nn.Module):
-    def __init__(self):
+    def __init__(self, date):
         super().__init__()
+        self.date = date
+
         self.input_sz = 7  # state dim = 7
         self.output_sz = len(ACTION)
 
@@ -168,10 +173,9 @@ class DQLModel(nn.Module):
 
     def save_state(self):
         state = self.layers.state_dict()
-        pickle.dump(state, open('runs/state.pkl', 'wb'))
+        pickle.dump(state, open('runs/' + self.date + '_state.pkl', 'wb'))
 
-    def load_state(self):
-        state = pickle.load(open('runs/state.pkl', 'rb'))
+    def load_state(self, state):
         self.layers.load_state_dict(state)
 
 

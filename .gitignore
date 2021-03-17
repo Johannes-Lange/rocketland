@@ -1,3 +1,4 @@
 *.pyc
 __pycache__/
 train_net.py
+.DS_Store
